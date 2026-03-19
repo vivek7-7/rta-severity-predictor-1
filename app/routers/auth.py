@@ -2,9 +2,11 @@
 app/routers/auth.py
 Authentication routes: register, login, logout.
 JWT stored in httpOnly cookie.
+Uses sha256 pre-hashing to avoid bcrypt 72-byte limit.
 """
 
 import logging
+import hashlib
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -27,13 +29,18 @@ templates = Jinja2Templates(directory="app/templates")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _prepare(password: str) -> str:
+    """Convert any-length password to a fixed 64-char hex string.
+    This bypasses bcrypt's 72-byte hard limit completely."""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
 def hash_password(password: str) -> str:
-    # Truncate to 72 bytes to avoid bcrypt hard limit
-    return pwd_context.hash(password[:72])
+    return pwd_context.hash(_prepare(password))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain[:72], hashed)
+    return pwd_context.verify(_prepare(plain), hashed)
 
 
 def create_access_token(email: str) -> str:
@@ -146,7 +153,6 @@ async def register_submit(
     try:
         logger.info("Register attempt: %s", email)
 
-        # Validation
         errors = []
         if len(full_name.strip()) < 2:
             errors.append("Full name must be at least 2 characters.")
@@ -163,7 +169,6 @@ async def register_submit(
                 status_code=400,
             )
 
-        # Duplicate check
         existing = await db.execute(
             select(User).where(User.email == email.lower().strip())
         )
@@ -175,7 +180,6 @@ async def register_submit(
                 status_code=400,
             )
 
-        # Create user
         user = User(
             full_name=full_name.strip(),
             email=email.lower().strip(),
@@ -186,7 +190,6 @@ async def register_submit(
         await db.refresh(user)
         logger.info("User created: %s id=%d", user.email, user.id)
 
-        # Create token and redirect
         token = create_access_token(user.email)
         response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
         response.set_cookie(
