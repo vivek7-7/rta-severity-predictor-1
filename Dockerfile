@@ -25,5 +25,6 @@ RUN mkdir -p app/ml/artifacts
 # Expose the application port
 EXPOSE 8000
 
+# rebuild-trigger-1
 # ── Runtime command ────────────────────────────────────────────────────────────
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
